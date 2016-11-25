@@ -1,0 +1,1 @@
+A collection of useful tools for preparing geodata (e.g. material parameters) for [SeisSol](http://www.seissol.org)
