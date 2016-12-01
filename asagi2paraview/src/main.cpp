@@ -39,6 +39,7 @@
 
 #include <map>
 #include <string>
+#include <utility>
 
 #include <netcdf.h>
 
@@ -123,15 +124,24 @@ int main(int argc, char* argv[])
 
 	// Get the order of IDs
 	std::map<std::string, unsigned int> varOrder;
+	// Material
 	varOrder["rho"] = 0;
 	varOrder["mu"] = 1;
 	varOrder["g"] = 1; // Same as mu
 	varOrder["lambda"] = 2;
+	// Stress
+	varOrder["sxx"] = 0;
+	varOrder["syy"] = 1;
+	varOrder["szz"] = 2;
+	varOrder["sxy"] = 3;
+	varOrder["sxz"] = 4;
+	varOrder["syz"] = 5;
+	varOrder["p"] = 6;
 
-	std::map<unsigned int, std::string> orderedVars;
+	std::multimap<unsigned int, std::string> orderedVars;
 	for (std::map<std::string, int>::const_iterator it = ncIVarMap.begin();
 			it != ncIVarMap.end(); it++) {
-		orderedVars[varOrder.at(it->first)] = it->first;
+		orderedVars.insert(std::pair<unsigned int, std::string>(varOrder.at(it->first), it->first));
 	}
 
 	// Create new netCDF file
@@ -195,7 +205,7 @@ int main(int argc, char* argv[])
 		// TODO
 	} else {
 		int ncType;
-		checkNcError(nc_def_compound(ncOFile, orderedVars.size()*sizeof(float), "material", &ncType)); // TODO make name dynamic
+		checkNcError(nc_def_compound(ncOFile, orderedVars.size()*sizeof(float), "data_t", &ncType)); // TODO make name dynamic
 
 		unsigned int i = 0;
 		for (std::map<unsigned int, std::string>::const_iterator it = orderedVars.begin();
