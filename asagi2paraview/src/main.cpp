@@ -37,7 +37,8 @@
  * @section DESCRIPTION
  */
 
-#include <map>
+#include <unordered_map>
+#include <unordered_set>
 #include <string>
 #include <utility>
 
@@ -90,8 +91,14 @@ int main(int argc, char* argv[])
 	checkNcError(nc_inq_varids(ncIFile, 0L, ncIVars));
 
 	bool isCompound = false;
-	std::map<std::string, int> ncIVarMap;
+	std::unordered_map<std::string, int> ncIVarMap;
 	int ncICoords[3] = {-1, -1, -1};
+
+	std::unordered_set<std::string> compoundVarNames;
+	compoundVarNames.insert("data"); // material
+	compoundVarNames.insert("stress");
+	compoundVarNames.insert("rsf"); // rate & state friction
+	compoundVarNames.insert("lsw"); // linear slip weakening
 
 	for (int i = 0; i < nvars; i++) {
 		char varname[NC_MAX_NAME+1];
@@ -100,7 +107,9 @@ int main(int argc, char* argv[])
 		int ncVar;
 		checkNcError(nc_inq_varid(ncIFile, varname, &ncVar));
 
-		const std::string name(varname);
+		std::string name(varname);
+		utils::StringUtils::toLower(name);
+
 		if (name == "x")
 			ncICoords[0] = ncVar;
 		else if (name == "y")
@@ -108,7 +117,7 @@ int main(int argc, char* argv[])
 		else if (name == "z")
 			ncICoords[2] = ncVar;
 		else {
-			if (name == "data")
+			if (compoundVarNames.find(name) != compoundVarNames.end())
 				isCompound = true;
 
 			ncIVarMap[name] = ncVar;
@@ -123,25 +132,47 @@ int main(int argc, char* argv[])
 		logInfo() << "Found compound data not found, converting to SeisSol format.";
 
 	// Get the order of IDs
-	std::map<std::string, unsigned int> varOrder;
-	// Material
-	varOrder["rho"] = 0;
-	varOrder["mu"] = 1;
-	varOrder["g"] = 1; // Same as mu
-	varOrder["lambda"] = 2;
-	// Stress
-	varOrder["sxx"] = 0;
-	varOrder["syy"] = 1;
-	varOrder["szz"] = 2;
-	varOrder["sxy"] = 3;
-	varOrder["sxz"] = 4;
-	varOrder["syz"] = 5;
-	varOrder["p"] = 6;
+	struct OutputPosition {
+		std::string dataset;
+		unsigned int order;
+	};
 
-	std::multimap<unsigned int, std::string> orderedVars;
-	for (std::map<std::string, int>::const_iterator it = ncIVarMap.begin();
-			it != ncIVarMap.end(); it++) {
-		orderedVars.insert(std::pair<unsigned int, std::string>(varOrder.at(it->first), it->first));
+	std::unordered_map<std::string, OutputPosition> varOrder;
+	// Material
+	varOrder["rho"] = {"data", 0};
+	varOrder["mu"] = {"data", 1};
+	varOrder["g"] = {"data", 1}; // Same as mu
+	varOrder["lambda"] = {"data", 2};
+	// Stress
+	varOrder["sxx"] = {"stress", 0};
+	varOrder["syy"] = {"stress", 1};
+	varOrder["szz"] = {"stress", 2};
+	varOrder["sxy"] = {"stress", 3};
+	varOrder["sxz"] = {"stress", 4};
+	varOrder["syz"] = {"stress", 5};
+	varOrder["p"] = {"stress", 6};
+	// Rate & state friction
+	varOrder["rs_srw"] = {"rsf", 0};
+	varOrder["rs_a"] = {"rsf", 1};
+	// Linear slip weakening
+	varOrder["coh"] = {"lsw", 0};
+	varOrder["d_c"] = {"lsw", 1};
+	varOrder["mu_s"] = {"lsw", 2};
+	varOrder["mu_d"] = {"lsw", 3};
+
+	// Outer map contains the list of different datasets, inner map the ordered variables
+	typedef std::unordered_map<unsigned int, std::string> orderdVars_t;
+	typedef std::unordered_map<std::string, orderdVars_t> datasets_t;
+	datasets_t orderedDatasets;
+	for (std::unordered_map<std::string, int>::const_iterator it = ncIVarMap.begin();
+			it != ncIVarMap.end(); ++it) {
+		std::unordered_map<std::string, OutputPosition>::const_iterator var = varOrder.find(it->first);
+		if (var == varOrder.end()) {
+			logWarning() << "Ignoring parameter" << it->first;
+			continue;
+		}
+
+		orderedDatasets[var->second.dataset][var->second.order] = it->first;
 	}
 
 	// Create new netCDF file
@@ -199,28 +230,36 @@ int main(int argc, char* argv[])
 	if (chunkSize > 0)
 		logInfo() << utils::nospace << "Setting chunk size to (" << chunks[0] << ", " << chunks[1] << ", " << chunks[2] << ")";
 
-	int* ncOVars;
+	unsigned int maxVariables = 0; // Maximum number of variables in one dataset
+
+	std::unordered_map<std::string, int> ncOVars;
+
 	if (isCompound) {
-		ncOVars = 0L;
 		// TODO
 	} else {
-		int ncType;
-		checkNcError(nc_def_compound(ncOFile, orderedVars.size()*sizeof(float), "data_t", &ncType)); // TODO make name dynamic
+		for (datasets_t::const_iterator it = orderedDatasets.begin();
+				it != orderedDatasets.end(); ++it) {
+			maxVariables = std::max(static_cast<size_t>(maxVariables), it->second.size());
 
-		unsigned int i = 0;
-		for (std::map<unsigned int, std::string>::const_iterator it = orderedVars.begin();
-				it != orderedVars.end(); it++, i++) {
-			checkNcError(nc_insert_compound(ncOFile, ncType, it->second.c_str(), i*sizeof(float), NC_FLOAT));
+			int ncType;
+			checkNcError(nc_def_compound(ncOFile, it->second.size()*sizeof(float), (it->first+"_t").c_str(), &ncType)); // TODO make name dynamic
+
+			unsigned int i = 0;
+			for (orderdVars_t::const_iterator it2 = it->second.begin();
+					it2 != it->second.end(); ++it2, i++) {
+				checkNcError(nc_insert_compound(ncOFile, ncType, it2->second.c_str(), i*sizeof(float), NC_FLOAT));
+			}
+
+			int ncOVar;
+			checkNcError(nc_def_var(ncOFile, it->first.c_str(), ncType,3, ncODims, &ncOVar));
+			if (chunkSize > 0)
+				checkNcError(nc_def_var_chunking(ncOFile, ncOVar, NC_CHUNKED, chunks));
+			ncOVars[it->first] = ncOVar; // Save id for later
 		}
-
-		ncOVars = new int[1];
-		checkNcError(nc_def_var(ncOFile, "data", ncType,3, ncODims, ncOVars));
-		if (chunkSize > 0)
-			checkNcError(nc_def_var_chunking(ncOFile, ncOVars[0], NC_CHUNKED, chunks));
 	}
 
 	// Copy data
-	logInfo() << "Copying data";
+	logInfo() << "Copying coordinates";
 	for (unsigned int i = 0; i < 3; i++) {
 		float* data = new float[dimLength[i]];
 
@@ -234,27 +273,29 @@ int main(int argc, char* argv[])
 		// TODO
 	} else {
 		// TODO copy in chunks
-		float* data = new float[dimLength[0]*dimLength[1]*dimLength[2]*orderedVars.size()];
+		float* data = new float[dimLength[0]*dimLength[1]*dimLength[2]*maxVariables];
 		float* tmp = new float[dimLength[0]*dimLength[1]*dimLength[2]];
 
-		unsigned int i = 0;
-		for (std::map<unsigned int, std::string>::const_iterator it = orderedVars.begin();
-				it != orderedVars.end(); it++, i++) {
-			checkNcError(nc_get_var_float(ncIFile, ncIVarMap.at(it->second), tmp));
+		for (datasets_t::const_iterator it = orderedDatasets.begin();
+			it != orderedDatasets.end(); ++it) {
+			logInfo() << "Copying" << it->first;
 
-			for (unsigned int j = 0; j < dimLength[0]*dimLength[1]*dimLength[2]; j++) {
-				data[j*orderedVars.size() + i] = tmp[j];
+			unsigned int i = 0;
+			for (orderdVars_t::const_iterator it2 = it->second.begin();
+					it2 != it->second.end(); ++it2, i++) {
+				checkNcError(nc_get_var_float(ncIFile, ncIVarMap.at(it2->second), tmp));
+
+				for (unsigned int j = 0; j < dimLength[0]*dimLength[1]*dimLength[2]; j++) {
+					data[j*it->second.size() + i] = tmp[j];
+				}
+
+				checkNcError(nc_put_var(ncOFile, ncOVars[it->first], data));
 			}
 		}
 
 		delete [] tmp;
-
-		checkNcError(nc_put_var(ncOFile, ncOVars[0], data));
-
 		delete [] data;
 	}
-
-	delete [] ncOVars;
 
 	checkNcError(nc_close(ncIFile));
 	checkNcError(nc_close(ncOFile));

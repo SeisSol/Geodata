@@ -44,6 +44,9 @@ import utils.variables
 
 vars = utils.variables.Variables()
 
+# Add build type
+vars.AddBuildType()
+
 # Add prefix path variable
 vars.AddPrefixPathVariable()
 
@@ -55,6 +58,13 @@ vars.SetHelpText(env)
 
 # Set prefix pathes from user
 vars.SetPrefixPathes(env)
+
+# Compiler flags
+env.Append(CXXFLAGS=['-std=c++11'])
+if env['buildType'] in ['release', 'relWithDebInfo']:
+	env.Append(CXXFLAGS=['-O3'])
+if env['buildType'] in ['debug', 'relWithDebInfo']:
+	env.Append(CXXFLAGS=['-g'])
 
 # Add HDF5
 libs.find(env, 'netcdf')
