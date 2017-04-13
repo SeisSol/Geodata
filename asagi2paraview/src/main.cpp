@@ -5,7 +5,7 @@
  * @author Sebastian Rettenberger (sebastian.rettenberger AT tum.de, http://www5.in.tum.de/wiki/index.php/Sebastian_Rettenberger)
  *
  * @section LICENSE
- * Copyright (c) 2016, SeisSol Group
+ * Copyright (c) 2016-2017, SeisSol Group
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -127,9 +127,9 @@ int main(int argc, char* argv[])
 	delete [] ncIVars;
 
 	if (isCompound)
-		logError() << "Found compound data. Convertion to Paraview is currntly not implemented.";
+		logInfo() << "No compount data found, converting to Paraview format.";
 	else
-		logInfo() << "Found compound data not found, converting to SeisSol format.";
+		logInfo() << "Compound data not found, converting to SeisSol format.";
 
 	// Get the order of IDs
 	struct OutputPosition {
@@ -164,15 +164,17 @@ int main(int argc, char* argv[])
 	typedef std::unordered_map<unsigned int, std::string> orderdVars_t;
 	typedef std::unordered_map<std::string, orderdVars_t> datasets_t;
 	datasets_t orderedDatasets;
-	for (std::unordered_map<std::string, int>::const_iterator it = ncIVarMap.begin();
-			it != ncIVarMap.end(); ++it) {
-		std::unordered_map<std::string, OutputPosition>::const_iterator var = varOrder.find(it->first);
-		if (var == varOrder.end()) {
-			logWarning() << "Ignoring parameter" << it->first;
-			continue;
-		}
+	if (!isCompound) {
+		for (std::unordered_map<std::string, int>::const_iterator it = ncIVarMap.begin();
+				it != ncIVarMap.end(); ++it) {
+			std::unordered_map<std::string, OutputPosition>::const_iterator var = varOrder.find(it->first);
+			if (var == varOrder.end()) {
+				logWarning() << "Ignoring parameter" << it->first;
+				continue;
+			}
 
-		orderedDatasets[var->second.dataset][var->second.order] = it->first;
+			orderedDatasets[var->second.dataset][var->second.order] = it->first;
+		}
 	}
 
 	// Create new netCDF file
@@ -235,7 +237,26 @@ int main(int argc, char* argv[])
 	std::unordered_map<std::string, int> ncOVars;
 
 	if (isCompound) {
-		// TODO
+		for (std::unordered_map<std::string, int>::const_iterator it = ncIVarMap.begin();
+			it != ncIVarMap.end(); ++it) {
+			// Get compound type
+			nc_type type;
+			checkNcError(nc_inq_vartype(ncIFile, it->second, &type));
+			size_t nfields;
+			checkNcError(nc_inq_compound(ncIFile, type, 0L, 0L, &nfields));
+			for (size_t i = 0; i < nfields; i++) {
+				char name[NC_MAX_NAME + 1];
+				checkNcError(nc_inq_compound_fieldname(ncIFile, type, i, name));
+
+				int ncOVar;
+				checkNcError(nc_def_var(ncOFile, name, NC_FLOAT ,3, ncODims, &ncOVar));
+				if (chunkSize > 0)
+					checkNcError(nc_def_var_chunking(ncOFile, ncOVar, NC_CHUNKED, chunks));
+				ncOVars[name] = ncOVar; // Save id for later
+			}
+
+			maxVariables = std::max(static_cast<size_t>(maxVariables), nfields);
+		}
 	} else {
 		for (datasets_t::const_iterator it = orderedDatasets.begin();
 				it != orderedDatasets.end(); ++it) {
@@ -251,7 +272,7 @@ int main(int argc, char* argv[])
 			}
 
 			int ncOVar;
-			checkNcError(nc_def_var(ncOFile, it->first.c_str(), ncType,3, ncODims, &ncOVar));
+			checkNcError(nc_def_var(ncOFile, it->first.c_str(), ncType, 3, ncODims, &ncOVar));
 			if (chunkSize > 0)
 				checkNcError(nc_def_var_chunking(ncOFile, ncOVar, NC_CHUNKED, chunks));
 			ncOVars[it->first] = ncOVar; // Save id for later
@@ -269,13 +290,38 @@ int main(int argc, char* argv[])
 		delete [] data;
 	}
 
-	if (isCompound) {
-		// TODO
-	} else {
-		// TODO copy in chunks
-		float* data = new float[dimLength[0]*dimLength[1]*dimLength[2]*maxVariables];
-		float* tmp = new float[dimLength[0]*dimLength[1]*dimLength[2]];
+	// TODO copy in chunks
+	float* data = new float[dimLength[0]*dimLength[1]*dimLength[2]*maxVariables];
+	float* tmp = new float[dimLength[0]*dimLength[1]*dimLength[2]];
 
+	if (isCompound) {
+		for (std::unordered_map<std::string, int>::const_iterator it = ncIVarMap.begin();
+			it != ncIVarMap.end(); ++it) {
+			// Get data
+			checkNcError(nc_get_var(ncIFile, it->second, data));
+
+			// Get compound type
+			nc_type type;
+			checkNcError(nc_inq_vartype(ncIFile, it->second, &type));
+			size_t nfields;
+			checkNcError(nc_inq_compound(ncIFile, type, 0L, 0L, &nfields));
+			for (size_t i = 0; i < nfields; i++) {
+				char name[NC_MAX_NAME + 1];
+				size_t offset;
+				checkNcError(nc_inq_compound_field(ncIFile, type, i, name, &offset, 0L, 0L, 0L));
+				offset /= sizeof(float);
+
+				logInfo() << "Copying" << std::string(name);
+
+				// Copy data to tmp
+				for (unsigned int j = 0; j < dimLength[0]*dimLength[1]*dimLength[2]; j++) {
+					tmp[j] = data[j*nfields + offset];
+				}
+
+				checkNcError(nc_put_var_float(ncOFile, ncOVars[name], tmp));
+			}
+		}
+	} else {
 		for (datasets_t::const_iterator it = orderedDatasets.begin();
 			it != orderedDatasets.end(); ++it) {
 			logInfo() << "Copying" << it->first;
@@ -292,10 +338,10 @@ int main(int argc, char* argv[])
 				checkNcError(nc_put_var(ncOFile, ncOVars[it->first], data));
 			}
 		}
-
-		delete [] tmp;
-		delete [] data;
 	}
+
+	delete [] tmp;
+	delete [] data;
 
 	checkNcError(nc_close(ncIFile));
 	checkNcError(nc_close(ncOFile));
