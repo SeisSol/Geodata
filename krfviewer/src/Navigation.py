@@ -72,8 +72,6 @@ class Navigation(QWidget):
     layout = QVBoxLayout(self)
     layout.addLayout(buttonLayout)
     layout.addWidget(self.sourceList)
-    
-    self.readFile('/work/uphoff/SRF-SeisSol/double-couple.srf')
       
   def selectFile(self):
     rfFilter = 'Standard rupture format (*.srf)'
