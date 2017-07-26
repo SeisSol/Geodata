@@ -37,6 +37,7 @@
  * @section DESCRIPTION
  */
 
+#include <map>
 #include <unordered_map>
 #include <unordered_set>
 #include <string>
@@ -161,7 +162,7 @@ int main(int argc, char* argv[])
 	varOrder["mu_d"] = {"lsw", 3};
 
 	// Outer map contains the list of different datasets, inner map the ordered variables
-	typedef std::unordered_map<unsigned int, std::string> orderdVars_t;
+	typedef std::map<unsigned int, std::string> orderdVars_t;
 	typedef std::unordered_map<std::string, orderdVars_t> datasets_t;
 	datasets_t orderedDatasets;
 	if (!isCompound) {
