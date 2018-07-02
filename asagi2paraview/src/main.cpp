@@ -3,9 +3,10 @@
  * This file is part of SeisSol.
  *
  * @author Sebastian Rettenberger (sebastian.rettenberger AT tum.de, http://www5.in.tum.de/wiki/index.php/Sebastian_Rettenberger)
+ * @author Carsten Uphoff (c.uphoff AT tum.de, http://www5.in.tum.de/wiki/index.php/Carsten_Uphoff,_M.Sc.)
  *
  * @section LICENSE
- * Copyright (c) 2016-2017, SeisSol Group
+ * Copyright (c) 2016-2018, SeisSol Group
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -50,16 +51,17 @@
 #include "utils/stringutils.h"
 #include "utils/timeutils.h"
 
-static void checkNcError(int error)
+static void checkNcError(int error, int const line, char const* file)
 {
-	if (error != NC_NOERR)
-		logError() << "An netCDF error occurred:" << nc_strerror(error);
+	if (error != NC_NOERR) {
+    logError() << "An netCDF error occurred in line" << line << "in file" << file << ":" << nc_strerror(error);
+  }
 }
 
 template<size_t N>
 static void ncPutText(int file, int var, const char* name, const char (&text)[N])
 {
-	checkNcError(nc_put_att_text(file, var, name, N-1, text));
+	checkNcError(nc_put_att_text(file, var, name, N-1, text), __LINE__, __FILE__);
 }
 
 int main(int argc, char* argv[])
@@ -79,17 +81,18 @@ int main(int argc, char* argv[])
 	std::string input = args.getAdditionalArgument<const char*>("input");
 
 	int ncIFile;
-	checkNcError(nc_open(input.c_str(), NC_NOWRITE, &ncIFile));
+	checkNcError(nc_open(input.c_str(), NC_NOWRITE, &ncIFile), __LINE__, __FILE__);
 
 	// Check number of dimensions
 	int ndims, nvars;
-	checkNcError(nc_inq(ncIFile, &ndims, &nvars, 0L, 0L));
-	if (ndims != 3)
+	checkNcError(nc_inq(ncIFile, &ndims, &nvars, 0L, 0L), __LINE__, __FILE__);
+	if (ndims < 1 || ndims > 3) {
 		logError() << "Unsupported number of dimensions found:" << ndims;
+  }
 
 	// Get variable IDs
 	int* ncIVars = new int[nvars];
-	checkNcError(nc_inq_varids(ncIFile, 0L, ncIVars));
+	checkNcError(nc_inq_varids(ncIFile, 0L, ncIVars), __LINE__, __FILE__);
 
 	bool isCompound = false;
 	std::unordered_map<std::string, int> ncIVarMap;
@@ -101,25 +104,30 @@ int main(int argc, char* argv[])
 	compoundVarNames.insert("rsf"); // rate & state friction
 	compoundVarNames.insert("lsw"); // linear slip weakening
 
+  unsigned nDimensions = 0;
 	for (int i = 0; i < nvars; i++) {
 		char varname[NC_MAX_NAME+1];
-		checkNcError(nc_inq_varname(ncIFile, ncIVars[i], varname));
+		checkNcError(nc_inq_varname(ncIFile, ncIVars[i], varname), __LINE__, __FILE__);
 
 		int ncVar;
-		checkNcError(nc_inq_varid(ncIFile, varname, &ncVar));
+		checkNcError(nc_inq_varid(ncIFile, varname, &ncVar), __LINE__, __FILE__);
 
 		std::string name(varname);
 		utils::StringUtils::toLower(name);
 
-		if (name == "x")
+		if (name == "x") {
 			ncICoords[0] = ncVar;
-		else if (name == "y")
+      ++nDimensions;
+    } else if (name == "y") {
 			ncICoords[1] = ncVar;
-		else if (name == "z")
+      ++nDimensions;
+    } else if (name == "z") {
 			ncICoords[2] = ncVar;
-		else {
-			if (compoundVarNames.find(name) != compoundVarNames.end())
+      ++nDimensions;
+    } else {
+			if (compoundVarNames.find(name) != compoundVarNames.end()) {
 				isCompound = true;
+      }
 
 			ncIVarMap[name] = ncVar;
 		}
@@ -127,10 +135,17 @@ int main(int argc, char* argv[])
 
 	delete [] ncIVars;
 
-	if (isCompound)
-		logInfo() << "No compount data found, converting to Paraview format.";
-	else
+  for (unsigned i = 0; i < nDimensions; ++i) {
+    if (ncICoords[i] < 0) {
+      logError() << "Please name your dimensions in ascending order, i.e. [x], [x,y], [x,y,z].";
+    }
+  }
+
+	if (isCompound) {
+		logInfo() << "No compound data found, converting to Paraview format.";
+  } else {
 		logInfo() << "Compound data not found, converting to SeisSol format.";
+  }
 
 	// Get the order of IDs
 	struct OutputPosition {
@@ -194,34 +209,34 @@ int main(int argc, char* argv[])
 	}
 
 	int ncOFile;
-	checkNcError(nc_create(output.c_str(), NC_NETCDF4, &ncOFile));
+	checkNcError(nc_create(output.c_str(), NC_NETCDF4, &ncOFile), __LINE__, __FILE__);
 	ncPutText(ncOFile, NC_GLOBAL, "creator", "asagi2paraview");
 	std::string timestamp = utils::TimeUtils::timeAsString("%F %T");
-	checkNcError(nc_put_att_text(ncOFile, NC_GLOBAL, "created", timestamp.length(), timestamp.c_str()));
+	checkNcError(nc_put_att_text(ncOFile, NC_GLOBAL, "created", timestamp.length(), timestamp.c_str()), __LINE__, __FILE__);
 
 	// Copy dimensions
 	const char* dims[3] = {"x", "y", "z"};
 	size_t dimLength[3];
-	int ncODims[3];
-	for (unsigned int i = 0; i < 3; i++) {
+	int ncODims[3] = {-1, -1, -1};
+	for (unsigned int i = 0; i < nDimensions; i++) {
 		int ncIDim;
-		checkNcError(nc_inq_dimid(ncIFile, dims[i], &ncIDim));
+		checkNcError(nc_inq_dimid(ncIFile, dims[i], &ncIDim), __LINE__, __FILE__);
 
-		checkNcError(nc_inq_dim(ncIFile, ncIDim, 0L, &dimLength[i]));
+		checkNcError(nc_inq_dim(ncIFile, ncIDim, 0L, &dimLength[i]), __LINE__, __FILE__);
 
-		checkNcError(nc_def_dim(ncOFile, dims[i], dimLength[i], &ncODims[2-i]));
+		checkNcError(nc_def_dim(ncOFile, dims[i], dimLength[i], &ncODims[nDimensions-1-i]), __LINE__, __FILE__);
 	}
 
 	// Create variables
 	int ncOCoords[3];
-	for (unsigned int i = 0; i < 3; i++) {
-		checkNcError(nc_def_var(ncOFile, dims[i], NC_FLOAT, 1, &ncODims[2-i], &ncOCoords[i]));
+	for (unsigned int i = 0; i < nDimensions; i++) {
+		checkNcError(nc_def_var(ncOFile, dims[i], NC_FLOAT, 1, &ncODims[nDimensions-1-i], &ncOCoords[i]), __LINE__, __FILE__);
 		size_t len;
 		if (nc_inq_attlen(ncIFile, ncICoords[i], "units", &len) == NC_NOERR) {
 			char* value = new char[len];
-			checkNcError(nc_get_att_text(ncIFile, ncICoords[i], "units", value));
+			checkNcError(nc_get_att_text(ncIFile, ncICoords[i], "units", value), __LINE__, __FILE__);
 
-			checkNcError(nc_put_att_text(ncOFile, ncOCoords[i], "units", len, value));
+			checkNcError(nc_put_att_text(ncOFile, ncOCoords[i], "units", len, value), __LINE__, __FILE__);
 			delete [] value;
 		}
 	}
@@ -242,17 +257,17 @@ int main(int argc, char* argv[])
 			it != ncIVarMap.end(); ++it) {
 			// Get compound type
 			nc_type type;
-			checkNcError(nc_inq_vartype(ncIFile, it->second, &type));
+			checkNcError(nc_inq_vartype(ncIFile, it->second, &type), __LINE__, __FILE__);
 			size_t nfields;
-			checkNcError(nc_inq_compound(ncIFile, type, 0L, 0L, &nfields));
+			checkNcError(nc_inq_compound(ncIFile, type, 0L, 0L, &nfields), __LINE__, __FILE__);
 			for (size_t i = 0; i < nfields; i++) {
 				char name[NC_MAX_NAME + 1];
-				checkNcError(nc_inq_compound_fieldname(ncIFile, type, i, name));
+				checkNcError(nc_inq_compound_fieldname(ncIFile, type, i, name), __LINE__, __FILE__);
 
 				int ncOVar;
-				checkNcError(nc_def_var(ncOFile, name, NC_FLOAT ,3, ncODims, &ncOVar));
+				checkNcError(nc_def_var(ncOFile, name, NC_FLOAT, nDimensions, ncODims, &ncOVar), __LINE__, __FILE__);
 				if (chunkSize > 0)
-					checkNcError(nc_def_var_chunking(ncOFile, ncOVar, NC_CHUNKED, chunks));
+					checkNcError(nc_def_var_chunking(ncOFile, ncOVar, NC_CHUNKED, chunks), __LINE__, __FILE__);
 				ncOVars[name] = ncOVar; // Save id for later
 			}
 
@@ -264,62 +279,69 @@ int main(int argc, char* argv[])
 			maxVariables = std::max(static_cast<size_t>(maxVariables), it->second.size());
 
 			int ncType;
-			checkNcError(nc_def_compound(ncOFile, it->second.size()*sizeof(float), (it->first+"_t").c_str(), &ncType)); // TODO make name dynamic
+			checkNcError(nc_def_compound(ncOFile, it->second.size()*sizeof(float), (it->first+"_t").c_str(), &ncType), __LINE__, __FILE__); // TODO make name dynamic
 
 			unsigned int i = 0;
 			for (orderdVars_t::const_iterator it2 = it->second.begin();
 					it2 != it->second.end(); ++it2, i++) {
-				checkNcError(nc_insert_compound(ncOFile, ncType, it2->second.c_str(), i*sizeof(float), NC_FLOAT));
+				checkNcError(nc_insert_compound(ncOFile, ncType, it2->second.c_str(), i*sizeof(float), NC_FLOAT), __LINE__, __FILE__);
 			}
 
 			int ncOVar;
-			checkNcError(nc_def_var(ncOFile, it->first.c_str(), ncType, 3, ncODims, &ncOVar));
-			if (chunkSize > 0)
-				checkNcError(nc_def_var_chunking(ncOFile, ncOVar, NC_CHUNKED, chunks));
+      logInfo() << ncOFile << ncType << nDimensions << ncODims[0] << ncODims[1];
+			checkNcError(nc_def_var(ncOFile, it->first.c_str(), ncType, nDimensions, ncODims, &ncOVar), __LINE__, __FILE__);
+			if (chunkSize > 0) {
+				checkNcError(nc_def_var_chunking(ncOFile, ncOVar, NC_CHUNKED, chunks), __LINE__, __FILE__);
+      }
 			ncOVars[it->first] = ncOVar; // Save id for later
 		}
 	}
 
 	// Copy data
 	logInfo() << "Copying coordinates";
-	for (unsigned int i = 0; i < 3; i++) {
+	for (unsigned int i = 0; i < nDimensions; i++) {
 		float* data = new float[dimLength[i]];
 
-		checkNcError(nc_get_var_float(ncIFile, ncICoords[i], data));
-		checkNcError(nc_put_var_float(ncOFile, ncOCoords[i], data));
+		checkNcError(nc_get_var_float(ncIFile, ncICoords[i], data), __LINE__, __FILE__);
+		checkNcError(nc_put_var_float(ncOFile, ncOCoords[i], data), __LINE__, __FILE__);
 
 		delete [] data;
 	}
+  
+  size_t dimLengthProduct = 1;
+  for (unsigned int i = 0; i < nDimensions; i++) {
+    dimLengthProduct *= dimLength[i];
+  }
 
 	// TODO copy in chunks
-	float* data = new float[dimLength[0]*dimLength[1]*dimLength[2]*maxVariables];
-	float* tmp = new float[dimLength[0]*dimLength[1]*dimLength[2]];
+	float* data = new float[dimLengthProduct*maxVariables];
+	float* tmp = new float[dimLengthProduct];
 
 	if (isCompound) {
 		for (std::unordered_map<std::string, int>::const_iterator it = ncIVarMap.begin();
 			it != ncIVarMap.end(); ++it) {
 			// Get data
-			checkNcError(nc_get_var(ncIFile, it->second, data));
+			checkNcError(nc_get_var(ncIFile, it->second, data), __LINE__, __FILE__);
 
 			// Get compound type
 			nc_type type;
-			checkNcError(nc_inq_vartype(ncIFile, it->second, &type));
+			checkNcError(nc_inq_vartype(ncIFile, it->second, &type), __LINE__, __FILE__);
 			size_t nfields;
-			checkNcError(nc_inq_compound(ncIFile, type, 0L, 0L, &nfields));
+			checkNcError(nc_inq_compound(ncIFile, type, 0L, 0L, &nfields), __LINE__, __FILE__);
 			for (size_t i = 0; i < nfields; i++) {
 				char name[NC_MAX_NAME + 1];
 				size_t offset;
-				checkNcError(nc_inq_compound_field(ncIFile, type, i, name, &offset, 0L, 0L, 0L));
+				checkNcError(nc_inq_compound_field(ncIFile, type, i, name, &offset, 0L, 0L, 0L), __LINE__, __FILE__);
 				offset /= sizeof(float);
 
 				logInfo() << "Copying" << std::string(name);
 
 				// Copy data to tmp
-				for (unsigned int j = 0; j < dimLength[0]*dimLength[1]*dimLength[2]; j++) {
+				for (unsigned int j = 0; j < dimLengthProduct; j++) {
 					tmp[j] = data[j*nfields + offset];
 				}
 
-				checkNcError(nc_put_var_float(ncOFile, ncOVars[name], tmp));
+				checkNcError(nc_put_var_float(ncOFile, ncOVars[name], tmp), __LINE__, __FILE__);
 			}
 		}
 	} else {
@@ -330,13 +352,13 @@ int main(int argc, char* argv[])
 			unsigned int i = 0;
 			for (orderdVars_t::const_iterator it2 = it->second.begin();
 					it2 != it->second.end(); ++it2, i++) {
-				checkNcError(nc_get_var_float(ncIFile, ncIVarMap.at(it2->second), tmp));
+				checkNcError(nc_get_var_float(ncIFile, ncIVarMap.at(it2->second), tmp), __LINE__, __FILE__);
 
-				for (unsigned int j = 0; j < dimLength[0]*dimLength[1]*dimLength[2]; j++) {
+				for (unsigned int j = 0; j < dimLengthProduct; j++) {
 					data[j*it->second.size() + i] = tmp[j];
 				}
 
-				checkNcError(nc_put_var(ncOFile, ncOVars[it->first], data));
+				checkNcError(nc_put_var(ncOFile, ncOVars[it->first], data), __LINE__, __FILE__);
 			}
 		}
 	}
@@ -344,8 +366,8 @@ int main(int argc, char* argv[])
 	delete [] tmp;
 	delete [] data;
 
-	checkNcError(nc_close(ncIFile));
-	checkNcError(nc_close(ncOFile));
+	checkNcError(nc_close(ncIFile), __LINE__, __FILE__);
+	checkNcError(nc_close(ncOFile), __LINE__, __FILE__);
 
 	return 0;
 }

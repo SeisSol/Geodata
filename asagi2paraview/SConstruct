@@ -52,6 +52,8 @@ vars.AddPrefixPathVariable()
 
 env = Environment(variables=vars)
 env['ENV'] = os.environ
+for var in ['CC', 'CXX']:
+  env[var] = env['ENV'][var]
 
 # Generate help
 vars.SetHelpText(env)
