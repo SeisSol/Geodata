@@ -38,8 +38,9 @@
 # @section DESCRIPTION
 #
 
-from PyQt4.QtCore import *
-from PyQt4.QtGui import *
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import *
 import numpy
 import math
 import re
@@ -54,28 +55,28 @@ else:
   HasPyproj = True
 
 MeshPosition = 'Position in mesh'
-X = u'x'
-Y = u'y'
-Z = u'z'
+X = 'x'
+Y = 'y'
+Z = 'z'
 
 FaultGeometry = 'Fault geometry'
-AxDef = u'Ax. Def.'
+AxDef = 'Ax. Def.'
 AxDefDefault = 'enu'
-FaultAxes = [u'u₁', u'u₂', u'u₃']
+FaultAxes = ['u₁', 'u₂', 'u₃']
 
 InferredSlip = 'Slip from STF'
-ISl = [u'int SR₁', u'int SR₂', u'int SR₃']
+ISl = ['int SR₁', 'int SR₂', 'int SR₃']
 
-InferredVariables = { MeshPosition: { X: u'm',
-                                      Y: u'm',
-                                      Z: u'm' },
-                      FaultGeometry: {  AxDef: u'',
-                                        FaultAxes[0]: u'm',
-                                        FaultAxes[1]: u'm',
-                                        FaultAxes[2]: u'm' },
-                      InferredSlip: { ISl[0]: u'm',
-                                      ISl[1]: u'm',
-                                      ISl[2]: u'm' }
+InferredVariables = { MeshPosition: { X: 'm',
+                                      Y: 'm',
+                                      Z: 'm' },
+                      FaultGeometry: {  AxDef: '',
+                                        FaultAxes[0]: 'm',
+                                        FaultAxes[1]: 'm',
+                                        FaultAxes[2]: 'm' },
+                      InferredSlip: { ISl[0]: 'm',
+                                      ISl[1]: 'm',
+                                      ISl[2]: 'm' }
                     }
 
 class Info(QWidget):
@@ -112,7 +113,7 @@ class Info(QWidget):
       groupWidget = QGroupBox(group)
       groupLayout = QFormLayout(groupWidget)
       infoLayout.addWidget(groupWidget, groupNr%self.NumberOfRows, groupNr/self.NumberOfRows)
-      for key in sorted(variables[group].iterkeys()):
+      for key in sorted(variables[group].keys()):
         self.widgets[key] = QLabel(self)
         groupLayout.addRow(key, self.widgets[key])
     
@@ -121,7 +122,7 @@ class Info(QWidget):
 
   def update(self, source):
     self.source = source
-    for group, variables in PointSource.Variables.iteritems():
+    for group, variables in PointSource.Variables.items():
       self.updateLabels(self.source.info, variables)
 
     self.updateInferredValues()
@@ -176,11 +177,11 @@ class Info(QWidget):
       self.updateLabels(data, InferredVariables[InferredSlip])
   
   def updateLabels(self, data, variables):
-    for key, unit in variables.iteritems():
-      if data.has_key(key):
-        self.widgets[key].setText(u'{} {}'.format(data[key], unit))
+    for key, unit in variables.items():
+      if key in data:
+        self.widgets[key].setText('{} {}'.format(data[key], unit))
       else:
-        self.widgets[key].setText(u'N/A')
+        self.widgets[key].setText('N/A')
         
   def computeSlip(self, slipRate):
     if slipRate == None or slipRate.size < 2:

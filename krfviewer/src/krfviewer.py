@@ -39,10 +39,11 @@
 #
 
 import sys
-from PyQt4 import QtGui
+from PyQt5 import QtGui
+from PyQt5.QtWidgets import QApplication
 import View
 
-app = QtGui.QApplication(sys.argv)
+app = QApplication(sys.argv)
 
 w = View.View()
 w.setWindowTitle('SeisSol kinematric rupture file viewer')
