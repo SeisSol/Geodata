@@ -184,7 +184,7 @@ class Info(QWidget):
         self.widgets[key].setText('N/A')
         
   def computeSlip(self, slipRate):
-    if slipRate == None or slipRate.size < 2:
+    if slipRate is None or len(slipRate) < 2:
       return float('nan')
     # Area of piecewise linear function
     return 0.5 * self.source.info[PointSource.Dt] * numpy.sum(slipRate[0:-1] + slipRate[1:])

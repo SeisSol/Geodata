@@ -76,7 +76,7 @@ class Navigation(QWidget):
       
   def selectFile(self):
     rfFilter = 'Standard rupture format (*.srf)'
-    fileName = QFileDialog.getOpenFileName(self, 'Open kinematic rupture file', QFileInfo(self.currentFile).dir().path(), rfFilter)
+    fileName = QFileDialog.getOpenFileName(self, 'Open kinematic rupture file', QFileInfo(self.currentFile).dir().path(), rfFilter)[0]
     self.currentFile = fileName
     self.readFile(fileName)
       
@@ -104,7 +104,7 @@ class Navigation(QWidget):
   def getActiveSource(self):      
     source = None
     for index in self.sourceList.selectedIndexes():
-      source = self.model.itemFromIndex(index).data().toPyObject()
+      source = self.model.itemFromIndex(index).data()
     return source
     
   def refreshFile(self):
