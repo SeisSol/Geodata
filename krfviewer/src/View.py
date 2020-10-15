@@ -37,7 +37,8 @@
 # @section DESCRIPTION
 #
 
-from PyQt4.QtGui import *
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import *
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 try:
 	from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
