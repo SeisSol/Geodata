@@ -37,8 +37,10 @@
 # @section DESCRIPTION
 #
 
-from PyQt4.QtCore import *
-from PyQt4.QtGui import *
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import *
+
 import os.path
 import copy
 
@@ -80,6 +82,7 @@ class Navigation(QWidget):
     self.readFile(fileName)
       
   def readFile(self, fileName):
+    fileName = fileName[0]
     if len(fileName) != 0:
       sources = list()
       suffix = QFileInfo(fileName).suffix()
@@ -103,7 +106,7 @@ class Navigation(QWidget):
   def getActiveSource(self):      
     source = None
     for index in self.sourceList.selectedIndexes():
-      source = self.model.itemFromIndex(index).data().toPyObject()
+      source = self.model.itemFromIndex(index).data()
     return source
     
   def refreshFile(self):

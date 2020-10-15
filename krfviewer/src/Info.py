@@ -38,8 +38,10 @@
 # @section DESCRIPTION
 #
 
-from PyQt4.QtCore import *
-from PyQt4.QtGui import *
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import *
+
 import numpy
 import math
 import re
@@ -112,7 +114,7 @@ class Info(QWidget):
       groupWidget = QGroupBox(group)
       groupLayout = QFormLayout(groupWidget)
       infoLayout.addWidget(groupWidget, groupNr%self.NumberOfRows, groupNr/self.NumberOfRows)
-      for key in sorted(variables[group].iterkeys()):
+      for key in sorted(variables[group].keys()):
         self.widgets[key] = QLabel(self)
         groupLayout.addRow(key, self.widgets[key])
     
@@ -121,7 +123,7 @@ class Info(QWidget):
 
   def update(self, source):
     self.source = source
-    for group, variables in PointSource.Variables.iteritems():
+    for group, variables in PointSource.Variables.items():
       self.updateLabels(self.source.info, variables)
 
     self.updateInferredValues()
@@ -176,14 +178,14 @@ class Info(QWidget):
       self.updateLabels(data, InferredVariables[InferredSlip])
   
   def updateLabels(self, data, variables):
-    for key, unit in variables.iteritems():
-      if data.has_key(key):
+    for key, unit in variables.items():
+      if key in data:
         self.widgets[key].setText(u'{} {}'.format(data[key], unit))
       else:
         self.widgets[key].setText(u'N/A')
         
   def computeSlip(self, slipRate):
-    if slipRate == None or slipRate.size < 2:
+    if slipRate is None or slipRate.size < 2:
       return float('nan')
     # Area of piecewise linear function
     return 0.5 * self.source.info[PointSource.Dt] * numpy.sum(slipRate[0:-1] + slipRate[1:])
