@@ -179,13 +179,13 @@ class Info(QWidget):
   
   def updateLabels(self, data, variables):
     for key, unit in variables.items():
-      if data.has_key(key):
+      if key in data:
         self.widgets[key].setText(u'{} {}'.format(data[key], unit))
       else:
         self.widgets[key].setText(u'N/A')
         
   def computeSlip(self, slipRate):
-    if slipRate == None or slipRate.size < 2:
+    if slipRate is None or slipRate.size < 2:
       return float('nan')
     # Area of piecewise linear function
     return 0.5 * self.source.info[PointSource.Dt] * numpy.sum(slipRate[0:-1] + slipRate[1:])

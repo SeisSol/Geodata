@@ -80,11 +80,11 @@ class View(QWidget):
     source = self.navigation.getActiveSource()
     self.info.update(source)
     
-    numPlots = sum([1 if source.slipRates[i] != None else 0 for i in range(3)])
+    numPlots = sum([1 if source.slipRates[i] is not None else 0 for i in range(3)])
 
     self.figure.clear()
     for i in range(3):
-      if source.slipRates[i] != None:
+      if source.slipRates[i] is not None:
         p = self.figure.add_subplot(numPlots, 1, i+1)
         p.set_xlabel('t [s]')
         p.set_ylabel('u{} [m/s]'.format(i+1))
