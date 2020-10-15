@@ -114,7 +114,7 @@ class Info(QWidget):
       groupWidget = QGroupBox(group)
       groupLayout = QFormLayout(groupWidget)
       infoLayout.addWidget(groupWidget, groupNr%self.NumberOfRows, groupNr/self.NumberOfRows)
-      for key in sorted(variables[group].iterkeys()):
+      for key in sorted(variables[group].keys()):
         self.widgets[key] = QLabel(self)
         groupLayout.addRow(key, self.widgets[key])
     
@@ -123,7 +123,7 @@ class Info(QWidget):
 
   def update(self, source):
     self.source = source
-    for group, variables in PointSource.Variables.iteritems():
+    for group, variables in PointSource.Variables.items():
       self.updateLabels(self.source.info, variables)
 
     self.updateInferredValues()
@@ -178,7 +178,7 @@ class Info(QWidget):
       self.updateLabels(data, InferredVariables[InferredSlip])
   
   def updateLabels(self, data, variables):
-    for key, unit in variables.iteritems():
+    for key, unit in variables.items():
       if data.has_key(key):
         self.widgets[key].setText(u'{} {}'.format(data[key], unit))
       else:
