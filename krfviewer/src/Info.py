@@ -113,7 +113,7 @@ class Info(QWidget):
     for groupNr,group in enumerate(variables):
       groupWidget = QGroupBox(group)
       groupLayout = QFormLayout(groupWidget)
-      infoLayout.addWidget(groupWidget, groupNr%self.NumberOfRows, groupNr/self.NumberOfRows)
+      infoLayout.addWidget(groupWidget, groupNr%self.NumberOfRows, groupNr//self.NumberOfRows)
       for key in sorted(variables[group].keys()):
         self.widgets[key] = QLabel(self)
         groupLayout.addRow(key, self.widgets[key])
@@ -140,7 +140,12 @@ class Info(QWidget):
           self.projError.setText(str(err))
         else:
           try:
-            x, y, z = pyproj.transform(self.lonlat, projection, self.source.info[PointSource.Lon], self.source.info[PointSource.Lat], -self.source.info[PointSource.Dep], radians=False)
+            transformer = pyproj.Transformer.from_crs(self.lonlat, projection)
+            x, y, z = transformer.transform(
+                self.source.info[PointSource.Lon],
+                self.source.info[PointSource.Lat],
+                -self.source.info[PointSource.Dep]
+            )
           except RuntimeError as err:
             self.proj.setStyleSheet('QLineEdit { background: rgb(255, 0, 0); }')
             self.projError.setText(str(err))
